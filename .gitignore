@@ -50,6 +50,9 @@ Thumbs.db
 *.log
 automation.log
 
+# Last run timestamp
+.last_run
+
 # Sample/test data scripts (optional - remove if you want to commit these)
 # add_sample_data.py
 # delete_sample_data.py

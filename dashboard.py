@@ -8,6 +8,7 @@ import plotly.graph_objects as go
 from data_manager import DataManager
 from datetime import datetime
 import numpy as np
+import os
 
 # Page configuration
 st.set_page_config(
@@ -264,9 +265,51 @@ def create_company_chart(df):
     
     return fig
 
+def get_last_run_timestamp():
+    """Get the timestamp of the last email processing run"""
+    try:
+        last_run_file = os.path.join(os.path.dirname(__file__), '.last_run')
+        if os.path.exists(last_run_file):
+            with open(last_run_file, 'r') as f:
+                timestamp_str = f.read().strip()
+                try:
+                    last_run = datetime.fromisoformat(timestamp_str)
+                    return last_run
+                except:
+                    return None
+    except:
+        pass
+    return None
+
 def main():
     # Header
     st.markdown('<h1 class="main-header">📊 Job Application Workflow Dashboard</h1>', unsafe_allow_html=True)
+    
+    # Display last run timestamp in top right corner
+    last_run = get_last_run_timestamp()
+    if last_run:
+        # Format timestamp
+        time_ago = datetime.now() - last_run
+        if time_ago.days > 0:
+            time_str = f"{time_ago.days} day(s) ago"
+        elif time_ago.seconds > 3600:
+            hours = time_ago.seconds // 3600
+            time_str = f"{hours} hour(s) ago"
+        elif time_ago.seconds > 60:
+            minutes = time_ago.seconds // 60
+            time_str = f"{minutes} minute(s) ago"
+        else:
+            time_str = "Just now"
+        
+        # Display in top right corner
+        st.markdown(f"""
+        <div style="position: fixed; top: 10px; right: 10px; background-color: #f0f2f6; 
+                    padding: 8px 12px; border-radius: 5px; font-size: 0.85rem; 
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.1); z-index: 999;">
+            <strong>Last Run:</strong> {last_run.strftime('%Y-%m-%d %H:%M:%S')}<br>
+            <small style="color: #666;">{time_str}</small>
+        </div>
+        """, unsafe_allow_html=True)
     
     # Load data from PostgreSQL database
     data_manager = DataManager()
@@ -278,9 +321,6 @@ def main():
         return data_manager.get_applications(), data_manager.get_statistics()
     
     df, stats = load_fresh_data()
-    
-    # Display data source info
-    st.info("💾 **Data Source:** PostgreSQL Database | Data refreshes every 30 seconds or click 'Refresh Data' button")
     
     # Sidebar
     with st.sidebar:

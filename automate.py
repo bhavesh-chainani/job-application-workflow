@@ -29,6 +29,7 @@ def main():
     
     try:
         process_emails()
+        # Note: process_emails() already saves the last run timestamp
         print(f"\n✓ Automation completed successfully at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         return 0
     except Exception as e:

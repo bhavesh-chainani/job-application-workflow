@@ -3,6 +3,7 @@ Email Processing Module
 Main script to process emails from Gmail and update job application database
 """
 import os
+from datetime import datetime
 from gmail_auth import get_gmail_service
 from llm_parser import parse_email_with_llm, find_related_application
 from data_manager import DataManager
@@ -152,6 +153,14 @@ def process_emails():
     if skipped_count > 0:
         print(f"  Skipped: {skipped_count}")
     print(f"{'='*50}")
+    
+    # Save last run timestamp
+    try:
+        last_run_file = os.path.join(os.path.dirname(__file__), '.last_run')
+        with open(last_run_file, 'w') as f:
+            f.write(datetime.now().isoformat())
+    except Exception as e:
+        print(f"Warning: Could not save last run timestamp: {e}")
 
 
 if __name__ == '__main__':
