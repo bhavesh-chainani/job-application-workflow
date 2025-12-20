@@ -3,6 +3,12 @@ Delete Sample Data
 Removes all sample job applications from the database
 Run this when you're done testing and want to remove the proxy data
 """
+import sys
+import os
+
+# Add parent directory to path to import modules
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from data_manager import DataManager
 import psycopg2
 from config import DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
@@ -20,6 +26,7 @@ def delete_sample_data():
         'password': DB_PASSWORD
     }
     
+    conn = None
     try:
         conn = psycopg2.connect(**conn_params)
         cursor = conn.cursor()
@@ -63,5 +70,4 @@ def delete_sample_data():
 
 if __name__ == '__main__':
     delete_sample_data()
-
 

@@ -146,7 +146,9 @@ Launch the interactive dashboard:
 python start.py
 ```
 
-The dashboard will open in your browser showing:
+This will start both backend and frontend servers and open the dashboard in your browser.
+
+The dashboard will show:
 - Sankey diagram visualization
 - Status breakdown charts
 - Application details table

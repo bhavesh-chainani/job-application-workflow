@@ -8,39 +8,81 @@ venv/
 env/
 ENV/
 .venv
+*.egg-info/
+dist/
+build/
 
 # Environment variables
 .env
 .env.local
+.env.*.local
 
-# Gmail API
+# Gmail API - NEVER COMMIT THESE
 credentials.json
 token.json
 
 # Database
 *.db
 *.sqlite
+*.sqlite3
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
+*.sublime-project
+*.sublime-workspace
 
 # OS
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+desktop.ini
 
 # Frontend
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
 frontend/build/
+frontend/.next/
+frontend/out/
+frontend/.cache/
 
 # Logs
 *.log
 automation.log
+*.log.*
 
-# Data files (optional - uncomment if you don't want to track CSV/Excel)
-# *.csv
-# *.xlsx
+# Data files
+*.csv
+*.xlsx
+*.xls
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+.temp/
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pytest
+.pytest_cache/
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json

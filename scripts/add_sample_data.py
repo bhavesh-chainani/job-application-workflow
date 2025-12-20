@@ -3,6 +3,12 @@ Sample Data Generator
 Adds sample job applications at different pipeline stages for testing/demo purposes
 Run this to populate the database with sample data to visualize the Sankey diagram
 """
+import sys
+import os
+
+# Add parent directory to path to import modules
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from data_manager import DataManager
 from datetime import datetime, timedelta
 import random
