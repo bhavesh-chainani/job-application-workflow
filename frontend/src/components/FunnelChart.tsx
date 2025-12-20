@@ -86,3 +86,5 @@ const FunnelChart: React.FC<FunnelChartProps> = ({ data }) => {
 
 export default FunnelChart;
 
+
+

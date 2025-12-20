@@ -154,3 +154,5 @@ const ApplicationTable: React.FC<ApplicationTableProps> = ({ applications, onUpd
 
 export default ApplicationTable;
 
+
+
