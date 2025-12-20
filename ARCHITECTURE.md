@@ -32,14 +32,17 @@
 - Updates database with new/updated applications
 - Optionally marks emails as read
 
-### 5. **Dashboard** (`dashboard.py`)
-- Interactive Streamlit web application
-- **Sankey Diagram**: Visualizes flow: Company → Location → Status
-- **Status Breakdown**: Pie chart showing status distribution
-- **Company Chart**: Bar chart of top companies
-- **Data Table**: Filterable table with all applications
-- **Filters**: Filter by status, company, location
-- **Export**: Download data as CSV
+### 5. **Dashboard** (React + FastAPI)
+- **Backend** (`backend/main.py`): FastAPI REST API server
+  - Provides endpoints for applications, statistics, and funnel data
+  - Handles status and location updates
+  - Auto-generated API documentation at `/docs`
+- **Frontend** (`frontend/`): React + TypeScript web application
+  - **Funnel Visualization**: Horizontal bar charts showing application pipeline flow
+  - **Metrics Dashboard**: Key statistics (total apps, companies, locations, in-progress)
+  - **Application Table**: Filterable, editable table with inline status/location updates
+  - **Filters**: Filter by status and company
+  - Modern UI with Tailwind CSS
 
 ### 6. **Automation** (`automate.py`)
 - Wrapper script for scheduled execution
@@ -56,9 +59,9 @@
 ## Data Flow
 
 ```
-Gmail API → Email Processor → Email Parser → Data Manager → CSV/Excel
+Gmail API → Email Processor → Email Parser → Data Manager → PostgreSQL
                                                       ↓
-                                              Dashboard (Streamlit)
+                                              FastAPI Backend → React Frontend
 ```
 
 ## Workflow
@@ -74,9 +77,10 @@ Gmail API → Email Processor → Email Parser → Data Manager → CSV/Excel
    - Extracted data is stored/updated in CSV/Excel
 
 3. **Visualization**:
-   - User launches `dashboard.py` with Streamlit
-   - Dashboard reads from CSV and displays visualizations
-   - User can filter, explore, and export data
+   - User launches dashboard with `python start.py`
+   - Backend API serves data from PostgreSQL
+   - React frontend displays interactive visualizations
+   - User can filter, explore, and update applications in real-time
 
 4. **Automation**:
    - `automate.py` runs periodically (via cron/scheduler)
@@ -112,7 +116,7 @@ The system is designed to be easily extended:
 
 - **Add new fields**: Modify `email_parser.py` to extract additional data
 - **Custom statuses**: Update `STATUSES` in `config.py`
-- **New visualizations**: Add charts to `dashboard.py`
+- **New visualizations**: Add components to `frontend/src/components/`
 - **Different email sources**: Extend `process_emails.py` to support other APIs
 - **Database backend**: Replace CSV storage in `data_manager.py` with SQL database
 

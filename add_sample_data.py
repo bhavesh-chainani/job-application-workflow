@@ -122,8 +122,8 @@ def add_sample_data():
         for status, count in status_counts.items():
             print(f"  {status}: {count}")
     
-    print("\n💡 You can now view the Sankey diagram in the dashboard!")
-    print("   Run: streamlit run dashboard.py")
+    print("\n💡 You can now view the dashboard!")
+    print("   Run: python start.py")
     print("\n⚠️  Remember: This is sample data. Delete it when done testing.")
 
 if __name__ == '__main__':

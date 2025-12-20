@@ -39,8 +39,9 @@ An automated system that tracks job applications from Gmail and visualizes them 
 
 5. **Launch the dashboard**:
    ```bash
-   streamlit run dashboard.py
+   python start.py
    ```
+   This starts both backend and frontend automatically and opens your browser.
 
 ## Configuration
 

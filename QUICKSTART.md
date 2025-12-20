@@ -143,7 +143,7 @@ This will:
 Launch the interactive dashboard:
 
 ```bash
-streamlit run dashboard.py
+python start.py
 ```
 
 The dashboard will open in your browser showing:
