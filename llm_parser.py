@@ -136,9 +136,12 @@ Extract the following information:
 5. **Location**: Job location (city, state, country, or remote). Can be "Remote" if mentioned.
 
 Additionally, determine if this email is related to an existing application in the database. Consider:
-- Same company AND same role = same application
-- Same company with similar role = likely same application
+- Same company AND same role = same application (e.g., application confirmation + rejection = same job)
+- Same company with similar role (e.g., "Software Engineer" vs "Senior Software Engineer") = likely same application
+- Same company, different role = different application (unless clearly a mistake)
 - Different company OR clearly different role = new application
+
+IMPORTANT: If this is a status update (rejection, interview, offer) for a job you already applied to, set is_new_application=false and provide the related_application_id from the existing applications list above.
 
 Return a JSON object with this exact structure:
 {{

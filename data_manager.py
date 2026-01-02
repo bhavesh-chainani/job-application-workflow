@@ -10,6 +10,51 @@ from sqlalchemy import create_engine
 from datetime import datetime
 from config import DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
 
+# Status hierarchy: higher number = more advanced status
+STATUS_HIERARCHY = {
+    'Applied': 0,
+    'Recruiter Screen': 1,
+    'Interview': 2,
+    'Rejected': 3,  # Final status
+    'Ghosted': 3,  # Final status
+    'Dropped': 3,  # Final status
+    'Offer': 4,  # Final status (highest)
+}
+
+def get_status_priority(status):
+    """Get priority number for status (higher = more advanced)"""
+    return STATUS_HIERARCHY.get(status, 0)
+
+def should_update_status(current_status, new_status):
+    """
+    Determine if status should be updated.
+    Rules:
+    - Can always move forward (Applied -> Interview -> Offer)
+    - Can move to final status from any stage (Applied -> Rejected)
+    - Cannot move backward from final status (Rejected -> Applied)
+    - Can move between final statuses only if new one is higher priority (Rejected -> Offer)
+    """
+    current_priority = get_status_priority(current_status)
+    new_priority = get_status_priority(new_status)
+    
+    # If new status is higher priority, allow update
+    if new_priority > current_priority:
+        return True
+    
+    # If both are final statuses (priority 3), only allow if new one is higher
+    if current_priority >= 3 and new_priority >= 3:
+        return new_priority > current_priority
+    
+    # If current is final status and new is not, don't allow backward movement
+    if current_priority >= 3 and new_priority < 3:
+        return False
+    
+    # Allow forward movement within non-final statuses
+    if current_priority < 3 and new_priority >= current_priority:
+        return True
+    
+    return False
+
 
 class DataManager:
     def __init__(self):
@@ -90,10 +135,18 @@ class DataManager:
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
         
+        CREATE TABLE IF NOT EXISTS processed_emails (
+            email_id VARCHAR(255) PRIMARY KEY,
+            processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            application_id INTEGER REFERENCES job_applications(id) ON DELETE SET NULL
+        );
+        
         CREATE INDEX IF NOT EXISTS idx_email_id ON job_applications(email_id);
         CREATE INDEX IF NOT EXISTS idx_company ON job_applications(company);
         CREATE INDEX IF NOT EXISTS idx_status ON job_applications(status);
         CREATE INDEX IF NOT EXISTS idx_related_app ON job_applications(related_application_id);
+        CREATE INDEX IF NOT EXISTS idx_company_job ON job_applications(company, job_title);
+        CREATE INDEX IF NOT EXISTS idx_processed_email ON processed_emails(email_id);
         """
         
         try:
@@ -101,6 +154,39 @@ class DataManager:
             conn.commit()
         except psycopg2.Error as e:
             print(f"Error creating table: {e}")
+            conn.rollback()
+        finally:
+            cursor.close()
+            conn.close()
+    
+    def is_email_processed(self, email_id):
+        """Check if an email has already been processed"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT 1 FROM processed_emails WHERE email_id = %s", (email_id,))
+            return cursor.fetchone() is not None
+        except psycopg2.Error as e:
+            print(f"Error checking processed email: {e}")
+            return False
+        finally:
+            cursor.close()
+            conn.close()
+    
+    def mark_email_processed(self, email_id, application_id=None):
+        """Mark an email as processed"""
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute(
+                """INSERT INTO processed_emails (email_id, application_id) 
+                   VALUES (%s, %s) 
+                   ON CONFLICT (email_id) DO UPDATE SET processed_at = CURRENT_TIMESTAMP""",
+                (email_id, application_id)
+            )
+            conn.commit()
+        except psycopg2.Error as e:
+            print(f"Error marking email as processed: {e}")
             conn.rollback()
         finally:
             cursor.close()
@@ -128,7 +214,7 @@ class DataManager:
             return pd.DataFrame()
     
     def add_application(self, application_data):
-        """Add or update a job application with smart deduplication"""
+        """Add or update a job application with smart deduplication and status hierarchy"""
         conn = self._get_connection()
         cursor = conn.cursor()
         
@@ -137,11 +223,14 @@ class DataManager:
             related_app_id = application_data.get('related_application_id')
             
             # Check if this email was already processed
-            cursor.execute("SELECT id FROM job_applications WHERE email_id = %s", (email_id,))
+            cursor.execute("SELECT id, status FROM job_applications WHERE email_id = %s", (email_id,))
             existing = cursor.fetchone()
             
             if existing:
-                # Update existing record
+                # Update existing record, but respect status hierarchy
+                existing_id, current_status = existing
+                new_status = application_data.get('status')
+                
                 valid_columns = [
                     'date', 'job_title', 'company', 'location', 'status',
                     'application_date', 'sender', 'subject', 'related_application_id',
@@ -152,29 +241,44 @@ class DataManager:
                 
                 for key, value in application_data.items():
                     if key in valid_columns and value is not None:
-                        update_fields.append(f"{key} = %s")
-                        update_values.append(value)
+                        # Special handling for status updates
+                        if key == 'status' and new_status:
+                            if should_update_status(current_status, new_status):
+                                update_fields.append(f"{key} = %s")
+                                update_values.append(value)
+                            else:
+                                print(f"  ⚠️  Skipping status update: {current_status} -> {new_status} (would be backward)")
+                        else:
+                            update_fields.append(f"{key} = %s")
+                            update_values.append(value)
                 
-                update_values.append(email_id)
-                update_query = f"""
-                    UPDATE job_applications 
-                    SET {', '.join(update_fields)}, last_updated = CURRENT_TIMESTAMP
-                    WHERE email_id = %s
-                """
-                cursor.execute(update_query, update_values)
-                conn.commit()
+                if update_fields:
+                    update_values.append(email_id)
+                    update_query = f"""
+                        UPDATE job_applications 
+                        SET {', '.join(update_fields)}, last_updated = CURRENT_TIMESTAMP
+                        WHERE email_id = %s
+                    """
+                    cursor.execute(update_query, update_values)
+                    conn.commit()
+                
+                # Mark email as processed
+                self.mark_email_processed(email_id, existing_id)
                 return self.load_data()
             
             # Check if this is linked to an existing application
             if related_app_id:
                 cursor.execute(
-                    "SELECT id FROM job_applications WHERE email_id = %s",
+                    "SELECT id, status FROM job_applications WHERE email_id = %s",
                     (related_app_id,)
                 )
                 related_app = cursor.fetchone()
                 
                 if related_app:
-                    # Update the related application
+                    # Update the related application with status hierarchy check
+                    related_id, current_status = related_app
+                    new_status = application_data.get('status')
+                    
                     update_fields = []
                     update_values = []
                     
@@ -185,20 +289,16 @@ class DataManager:
                     ]
                     for key, value in application_data.items():
                         if key in valid_columns and value is not None:
-                            # For status, only update if it's more advanced
-                            if key == 'status' and value:
-                                cursor.execute(
-                                    "SELECT status FROM job_applications WHERE email_id = %s",
-                                    (related_app_id,)
-                                )
-                                result = cursor.fetchone()
-                                current_status = result[0] if result else None
-                                status_order = {'Applied': 0, 'In Progress': 1, 'Rejected': 2, 'Withdrawn': 3}
-                                if current_status and status_order.get(value, 0) <= status_order.get(current_status, 0):
-                                    continue
-                            
-                            update_fields.append(f"{key} = %s")
-                            update_values.append(value)
+                            # For status, use status hierarchy to prevent backward movement
+                            if key == 'status' and new_status:
+                                if should_update_status(current_status, new_status):
+                                    update_fields.append(f"{key} = %s")
+                                    update_values.append(value)
+                                else:
+                                    print(f"  ⚠️  Skipping status update on related app: {current_status} -> {new_status}")
+                            else:
+                                update_fields.append(f"{key} = %s")
+                                update_values.append(value)
                     
                     if update_fields:
                         update_values.append(related_app_id)
@@ -209,62 +309,128 @@ class DataManager:
                         """
                         cursor.execute(update_query, update_values)
                         conn.commit()
+                    
+                    # Mark this email as processed and linked to the related application
+                    self.mark_email_processed(email_id, related_id)
                     return self.load_data()
             
-            # Check for fuzzy matches (same company + similar role)
+            # Check for fuzzy matches (same company + similar role + similar application date)
             company = application_data.get('company', '').lower() if application_data.get('company') else None
             role = application_data.get('job_title', '').lower() if application_data.get('job_title') else None
+            app_date = application_data.get('application_date')
             
             if company:
+                # Find potential matches: same company
                 cursor.execute(
-                    "SELECT email_id, company, job_title FROM job_applications WHERE LOWER(company) LIKE %s",
+                    """SELECT email_id, company, job_title, status, application_date 
+                       FROM job_applications 
+                       WHERE LOWER(company) LIKE %s 
+                       ORDER BY application_date DESC NULLS LAST, date DESC""",
                     (f'%{company}%',)
                 )
                 matches = cursor.fetchall()
                 
                 for match in matches:
-                    existing_email_id, existing_company, existing_role = match
+                    existing_email_id, existing_company, existing_role, existing_status, existing_app_date = match
                     existing_company_lower = str(existing_company).lower() if existing_company else ''
                     existing_role_lower = str(existing_role).lower() if existing_role else ''
                     
-                    # Same company and similar role
-                    if company in existing_company_lower or existing_company_lower in company:
-                        if role and existing_role_lower:
-                            role_words = set(role.split())
-                            existing_role_words = set(existing_role_lower.split())
-                            if len(role_words & existing_role_words) >= 1:
-                                # Likely same application - update instead of creating new
-                                update_fields = []
-                                update_values = []
-                                
-                                for key, value in application_data.items():
-                                    if key not in ['email_id'] and value is not None:
-                                        # Use parameterized query with column name validation
-                                        valid_columns = ['date', 'job_title', 'company', 'location', 'status', 
-                                                        'application_date', 'sender', 'subject', 'related_application_id',
-                                                        'confidence', 'reasoning']
-                                        if key in valid_columns:
-                                            cursor.execute(
-                                                sql.SQL("SELECT {} FROM job_applications WHERE email_id = %s").format(
-                                                    sql.Identifier(key)
-                                                ),
-                                                (existing_email_id,)
-                                            )
-                                            existing_value = cursor.fetchone()
-                                            if not existing_value or not existing_value[0]:
-                                                update_fields.append(f"{key} = %s")
-                                                update_values.append(value)
-                                
-                                if update_fields:
-                                    update_values.append(existing_email_id)
-                                    update_query = f"""
-                                        UPDATE job_applications 
-                                        SET {', '.join(update_fields)}, last_updated = CURRENT_TIMESTAMP
-                                        WHERE email_id = %s
-                                    """
-                                    cursor.execute(update_query, update_values)
-                                    conn.commit()
-                                return self.load_data()
+                    # Check if companies match
+                    company_match = (company in existing_company_lower or existing_company_lower in company or 
+                                   company == existing_company_lower)
+                    
+                    if not company_match:
+                        continue
+                    
+                    # Check role similarity
+                    role_match = False
+                    if role and existing_role_lower:
+                        role_words = set(role.split())
+                        existing_role_words = set(existing_role_lower.split())
+                        # At least 2 words in common for better matching
+                        common_words = role_words & existing_role_words
+                        if len(common_words) >= 2 or (len(common_words) >= 1 and len(role_words) <= 3):
+                            role_match = True
+                    elif not role or not existing_role_lower:
+                        # If one is missing, still consider it a match if company matches
+                        role_match = True
+                    
+                    # Check application date similarity (within 30 days)
+                    date_match = True
+                    if app_date and existing_app_date:
+                        try:
+                            from datetime import datetime, timedelta
+                            app_date_obj = datetime.strptime(app_date, '%Y-%m-%d') if isinstance(app_date, str) else app_date
+                            existing_date_obj = existing_app_date if isinstance(existing_app_date, datetime) else datetime.strptime(str(existing_app_date), '%Y-%m-%d')
+                            date_diff = abs((app_date_obj - existing_date_obj).days)
+                            date_match = date_diff <= 30  # Within 30 days
+                        except:
+                            date_match = True  # If date parsing fails, assume match
+                    
+                    # If company + role match (and optionally date), it's likely the same application
+                    if company_match and role_match and date_match:
+                        print(f"  🔗 Found matching application: {existing_company} - {existing_role}")
+                        # Update the existing application with new information
+                        cursor.execute("SELECT status FROM job_applications WHERE email_id = %s", (existing_email_id,))
+                        current_status_result = cursor.fetchone()
+                        current_status = current_status_result[0] if current_status_result else None
+                        new_status = application_data.get('status')
+                        
+                        update_fields = []
+                        update_values = []
+                        
+                        valid_columns = ['date', 'job_title', 'company', 'location', 'status', 
+                                        'application_date', 'sender', 'subject', 'related_application_id',
+                                        'confidence', 'reasoning']
+                        
+                        for key, value in application_data.items():
+                            if key in valid_columns and value is not None:
+                                # Check status hierarchy
+                                if key == 'status' and new_status and current_status:
+                                    if should_update_status(current_status, new_status):
+                                        update_fields.append(f"{key} = %s")
+                                        update_values.append(value)
+                                    else:
+                                        print(f"  ⚠️  Skipping status update: {current_status} -> {new_status}")
+                                else:
+                                    # For other fields, update if missing or if new value is more complete
+                                    cursor.execute(
+                                        sql.SQL("SELECT {} FROM job_applications WHERE email_id = %s").format(
+                                            sql.Identifier(key)
+                                        ),
+                                        (existing_email_id,)
+                                    )
+                                    existing_value = cursor.fetchone()
+                                    if not existing_value or not existing_value[0] or value:
+                                        update_fields.append(f"{key} = %s")
+                                        update_values.append(value)
+                        
+                        if update_fields:
+                            update_values.append(existing_email_id)
+                            update_query = f"""
+                                UPDATE job_applications 
+                                SET {', '.join(update_fields)}, last_updated = CURRENT_TIMESTAMP
+                                WHERE email_id = %s
+                            """
+                            cursor.execute(update_query, update_values)
+                            conn.commit()
+                        
+                        # Link this email to the existing application
+                        cursor.execute("SELECT id FROM job_applications WHERE email_id = %s", (existing_email_id,))
+                        app_id_result = cursor.fetchone()
+                        app_id = app_id_result[0] if app_id_result else None
+                        
+                        # Mark this email as processed and linked
+                        self.mark_email_processed(email_id, app_id)
+                        
+                        # Update related_application_id to link them
+                        cursor.execute(
+                            "UPDATE job_applications SET related_application_id = %s WHERE email_id = %s",
+                            (existing_email_id, email_id)
+                        )
+                        conn.commit()
+                        
+                        return self.load_data()
             
             # New application - insert it
             # Define valid database columns (exclude metadata fields like 'is_new_application')
@@ -298,6 +464,14 @@ class DataManager:
             
             cursor.execute(insert_query, insert_values)
             conn.commit()
+            
+            # Get the ID of the newly inserted application
+            cursor.execute("SELECT id FROM job_applications WHERE email_id = %s", (email_id,))
+            app_id_result = cursor.fetchone()
+            app_id = app_id_result[0] if app_id_result else None
+            
+            # Mark email as processed
+            self.mark_email_processed(email_id, app_id)
             
             return self.load_data()
             

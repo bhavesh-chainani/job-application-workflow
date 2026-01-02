@@ -48,6 +48,10 @@ STATUSES = [
 PROCESS_ONLY_UNREAD = False # Set to False to process all emails matching query
 MARK_AS_READ = True  # Mark processed emails as read
 
+# Gmail API Timeout Configuration (in seconds)
+GMAIL_API_TIMEOUT = 30  # Timeout for Gmail API requests
+GMAIL_API_MAX_RETRIES = 3  # Maximum number of retry attempts
+
 # OpenAI Configuration
 # ONLY reads from .env file (override=True ensures .env file takes precedence over system env vars)
 # Make sure your .env file contains: OPENAI_API_KEY=your-key-here
